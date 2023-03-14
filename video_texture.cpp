@@ -483,15 +483,19 @@ public:
     CHECK_HR(pVideoReaderAttributes->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, 1),
       "Failed to set enable video processing attribute type for reader config.");
 
-    CHECK_HR(pVideoReaderAttributes->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_IYUV),
-      "Failed to set media sub type on source reader output media type.");
+    //CHECK_HR(pVideoReaderAttributes->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_IYUV),
+    //  "Failed to set media sub type on source reader output media type.");
+
+    CHECK_HR(pVideoReaderAttributes->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12),
+             "Failed to set media sub type on source reader output media type.");
 
     CHECK_HR(MFCreateSourceReaderFromMediaSource(mediaFileSource, pVideoReaderAttributes, &pSourceReader),
       "Error creating media source reader.");
 
     CHECK_HR(MFCreateMediaType(&pReaderOutputType), "Failed to create source reader output media type.");
     CHECK_HR(pReaderOutputType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video), "Failed to set major type on source reader output media type.");
-    CHECK_HR(pReaderOutputType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_IYUV), "Failed to set media sub type on source reader output media type.");
+    //CHECK_HR(pReaderOutputType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_IYUV), "Failed to set media sub type on source reader output media type.");
+    CHECK_HR(pReaderOutputType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12), "Failed to set media sub type on source reader output media type.");
 
     CHECK_HR(pSourceReader->SetCurrentMediaType((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, NULL, pReaderOutputType),
       "Failed to set output media type on source reader.");
@@ -607,8 +611,8 @@ public:
       if (!target_texture) {
         target_texture = new Render::Texture();
         int texture_height = height * 2;
-        // if (!target_texture->create(width, texture_height, DXGI_FORMAT_R8_UNORM, true))
-        // if (!target_texture->CreateTexture(width, height, DXGI_FORMAT_420_OPAQUE))
+        //if (!target_texture->create(width, texture_height, DXGI_FORMAT_R8_UNORM, true))
+        //if (!target_texture->CreateTexture(width, height, DXGI_FORMAT_420_OPAQUE))
         if (!target_texture->CreateNV12Texture(width, height))
         {
             return;

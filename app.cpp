@@ -4,6 +4,8 @@
 using namespace Render;
 // --------------------------------------------------------------------------------------
 bool CApp::create(HWND hWnd) {
+    //if (!Render::create(hWnd))
+    //    return false;
   if (!Render::InitD3D11Video(hWnd))
     return false;
 
@@ -77,7 +79,7 @@ bool CApp::create(HWND hWnd) {
     return false;
 
   VideoTexture::createAPI();
-  if (!video.create("data/4k2.mp4"))
+  if (!video.create("data/720p.mp4"))
     return false;
 
   return true;

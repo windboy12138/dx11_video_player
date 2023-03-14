@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <d3d11.h>
 #include "SimpleMath.h"
+#include <iostream>
 
 #define SAFE_RELEASE(x) if(x) { (x)->Release(); x = nullptr; }
 
@@ -59,6 +60,7 @@ namespace Render {
     DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
     uint32_t xres = 0;
     uint32_t yres = 0;
+    uint32_t real_yres = 0;
     bool create(uint32_t xres, uint32_t yres, DXGI_FORMAT new_format, bool is_dynamic);
     bool CreateTexture(uint32_t width, uint32_t height, DXGI_FORMAT new_format);
     bool CreateNV12Texture(uint32_t width, uint32_t height);

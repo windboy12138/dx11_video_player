@@ -78,11 +78,6 @@ namespace Render {
     vp.MaxDepth = 1.0f;
     vp.TopLeftX = 0;
     vp.TopLeftY = 0;
-
-    vp.Width -= 200;
-    vp.Height -= 200;
-    vp.TopLeftX = 100;
-    vp.TopLeftY = 100;
     ctx->RSSetViewports(1, &vp);
 
     // Create the sample state
@@ -155,7 +150,7 @@ namespace Render {
       content_desc.InputFrameRate.Numerator = 30;
       content_desc.InputFrameRate.Denominator = 1;
       content_desc.InputWidth = xres;
-      content_desc.InputHeight = yres;
+      content_desc.InputHeight = real_yres;
       content_desc.OutputWidth = render_width;
       content_desc.OutputHeight = render_height;
       content_desc.OutputFrameRate.Numerator = 30;
@@ -225,7 +220,7 @@ namespace Render {
 
       RECT rect = { 0 };
       rect.right = xres;
-      rect.bottom = yres;
+      rect.bottom = real_yres;
       video_ctx->VideoProcessorSetStreamSourceRect(m_pD3D11VideoProcessor, 0, true, &rect);
 
       //rect.right = render_width - 20;
@@ -468,10 +463,15 @@ namespace Render {
       HRESULT hr;
       xres = width;
       yres = height;
+      real_yres = yres;
+      if (yres == 1088)
+      {
+          real_yres = 1080;
+      }
       D3D11_TEXTURE2D_DESC const texDesc = CD3D11_TEXTURE2D_DESC(
           DXGI_FORMAT_NV12,           // HoloLens PV camera format, common for video sources
-          width,					// Width of the video frames
-          height,					// Height of the video frames
+          xres,					// Width of the video frames
+          real_yres,					// Height of the video frames
           1,                          // Number of textures in the array
           1,                          // Number of miplevels in each texture
           D3D11_BIND_SHADER_RESOURCE, // We read from this texture in the shader
@@ -517,6 +517,8 @@ namespace Render {
       hr = device->CreateTexture2D(&desc, 0, &d3d_texture);
       if (FAILED(hr))
           return false;
+
+      return true;
   }
   void Texture::activate(int slot) const {
     ctx->PSSetShaderResources(slot, 1, &shader_resource_view);
@@ -681,25 +683,38 @@ namespace Render {
       assert(data_size == xres * yres * 6 / 4);
       HRESULT hr = S_OK;
 
-      // I420ToNV12
+      // NV12 Copy
       int stride_y = xres;
-      int stride_uv = (xres + 1) / 2;
-      int height_uv = (yres + 1) / 2;
-      const uint8_t* src_y = data;
-      const uint8_t* src_v = data + stride_y * yres;
-      const uint8_t* src_u = src_v + (stride_uv * height_uv);
+      uint8_t* src_y = (uint8_t*)data;
+      uint8_t* src_uv = src_y + stride_y * yres;
 
-      uint8_t* dst_nv12 = new uint8_t[xres * yres * 6 / 4];
-      uint8_t* dst_y = dst_nv12;
-      uint8_t* dst_uv = dst_nv12 + stride_y * yres;
-      // Caution! Here video frame is not standard I420 format!
-      libyuv::I420ToNV12(src_y, stride_y,
-                         src_v, stride_uv,
-                         src_u, stride_uv,
-                         dst_y, stride_y,
-                         dst_uv, stride_y,
-                         xres, yres);
+      //FILE* fp = fopen("data/nv12_src.txt", "w+");
+      //uint8_t* src = src_y;
+      //for (int i = 0; i < yres; i++)
+      //{
+      //    for (int j = 0; j < xres; j++)
+      //    {
+      //        fprintf(fp, "%4d", *(src++));
+      //    }
+      //    fprintf(fp, "\n");
+      //}
 
+      //for (int i = 0; i < yres / 2; i++)
+      //{
+      //    for (int j = 0; j < xres; j++)
+      //    {
+      //        fprintf(fp, "%4d", *(src++));
+      //    }
+      //    fprintf(fp, "\n");
+      //}
+
+      //fclose(fp);
+      
+      // if 1080p
+      if (yres == 1088)
+      {
+          real_yres = 1080;
+      }
 
       // COPY
       D3D11_MAPPED_SUBRESOURCE ms;
@@ -708,20 +723,49 @@ namespace Render {
           return false;
 
       uint8_t* dst = (uint8_t*)ms.pData;
+      ms.RowPitch = xres;
+      uint8_t* dst_y = dst;
+      uint8_t* dst_uv = dst_y + stride_y * real_yres;
       
-      for (int i = 0; i < yres; i++)
+      for (int i = 0; i < real_yres; i++)
       {
-          memcpy(dst + stride_y * i, dst_y + stride_y * i, stride_y);
+          //memcpy(dst + stride_y * i, dst_y + stride_y * i, stride_y);
+          memcpy(dst_y, src_y, stride_y);
+          dst_y += stride_y;
+          src_y += stride_y;
       }
 
-      for (int i = 0; i < yres / 2; i++)
+      for (int i = 0; i < real_yres / 2; i++)
       {
-          memcpy(dst + (yres + i) * stride_y, dst_uv + stride_y * i, stride_y);
+          //memcpy(dst + (real_yres + i) * stride_y, dst_uv + stride_y * i, stride_y);
+          memcpy(dst_uv, src_uv, stride_y);
+          dst_uv += stride_y;
+          src_uv += stride_y;
       }
+
+      //fp = fopen("data/nv12_dst.txt", "w+");
+      //src = dst;
+      //for (int i = 0; i < real_yres; i++)
+      //{
+      //    for (int j = 0; j < xres; j++)
+      //    {
+      //        fprintf(fp, "%4d", *(src++));
+      //    }
+      //    fprintf(fp, "\n");
+      //}
+
+      //for (int i = 0; i < real_yres / 2; i++)
+      //{
+      //    for (int j = 0; j < xres; j++)
+      //    {
+      //        fprintf(fp, "%4d", *(src++));
+      //    }
+      //    fprintf(fp, "\n");
+      //}
+
+      //fclose(fp);
 
       ctx->Unmap(nv12_texture, 0);
-
-      delete[] dst_nv12;
 
       ctx->CopyResource(d3d_texture, nv12_texture);
 
