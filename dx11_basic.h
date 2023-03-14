@@ -6,6 +6,21 @@
 #include <iostream>
 
 #define SAFE_RELEASE(x) if(x) { (x)->Release(); x = nullptr; }
+#define IF_FAILED_RETURN(X) if(FAILED(hr = (X))){ return hr; }
+#define IF_FAILED_THROW(X) if(FAILED(hr = (X))){ throw hr; }
+
+template<class T> inline void SAFE_DELETE_ARRAY(T * &p)
+{
+    if (p)
+    {
+        delete[] p;
+        p = NULL;
+    }
+}
+
+BYTE GetR(const int, int const);
+BYTE GetG(const int, const int, const int);
+BYTE GetB(const int, const int);
 
 using namespace DirectX;
 using namespace DirectX::SimpleMath;
@@ -72,6 +87,8 @@ namespace Render {
     bool updateYV12(const uint8_t* data, size_t data_size);
     bool updateBGRA(const uint8_t* data, size_t data_size);
     bool updateNV12(const uint8_t* data, size_t data_size);
+    HRESULT ProcessNV12ToBmpFile(LPCSTR, BYTE*, const INT, const UINT, const UINT);
+    HRESULT CreateBmpFile(LPCSTR, BYTE*, const UINT, const UINT, const UINT);
   };
 
   template< typename Data >

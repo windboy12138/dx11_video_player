@@ -79,7 +79,7 @@ bool CApp::create(HWND hWnd) {
     return false;
 
   VideoTexture::createAPI();
-  if (!video.create("data/720p.mp4"))
+  if (!video.create("data/1080p.mp4"))
     return false;
 
   return true;
