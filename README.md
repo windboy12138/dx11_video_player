@@ -38,3 +38,6 @@ if (!target_texture->CreateNV12Texture(width, height))
 target_texture->updateNV12(byteBuffer, buffCurrLen);
 ```
 **I recommend you to choose NV12 format, but for now it has issue with 1080p video render, if you have any idea about it, please make an issue**
+
+Here is the 1080p render result:
+![1080p Video Render Sample](./data/nv12.png)
