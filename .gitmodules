@@ -1,0 +1,3 @@
+[submodule "third_party/dx11_video_texture"]
+	path = third_party/dx11_video_texture
+	url = https://github.com/windboy12138/dx11_video_texture.git
