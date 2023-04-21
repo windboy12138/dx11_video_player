@@ -3,6 +3,8 @@
 #include "dx11_basic.h"
 #include "libyuv\planar_functions.h"
 #include "libyuv\convert_from.h"
+#include <dxgi.h>
+#pragma comment(lib, "dxgi.lib")
 
 #pragma comment(lib, "d3d11")
 #pragma comment(lib, "d3dcompiler")
@@ -124,6 +126,23 @@ namespace Render {
   bool InitD3D11Video(HWND hWnd) {
       HRESULT hr;
 
+      // Enum Graphic Cards in PC
+      DXGI_OUTPUT_DESC m_OutputDesc;
+      IDXGIFactory1* pFactory = NULL;
+      CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)&pFactory);
+      IDXGIAdapter* pAdapter = NULL;
+      IDXGIOutput* DxgiOutput = NULL;
+      for (UINT i = 0; ; ++i)
+      {
+          if (pFactory->EnumAdapters(i, &pAdapter) == DXGI_ERROR_NOT_FOUND)
+          {
+              break;
+          }
+          pAdapter->EnumOutputs(0, &DxgiOutput);
+          DxgiOutput->GetDesc(&m_OutputDesc);
+      }
+      pFactory->Release();
+
       RECT rc;
       GetClientRect(hWnd, &rc);
       render_width = rc.right - rc.left;
@@ -131,7 +150,7 @@ namespace Render {
 
       D3D_FEATURE_LEVEL featureLevels[] = {
           D3D_FEATURE_LEVEL_11_1,
-          D3D_FEATURE_LEVEL_11_0,
+          D3D_FEATURE_LEVEL_11_0
       };
       UINT numFeatureLevels = ARRAYSIZE(featureLevels);
       D3D_FEATURE_LEVEL       featureLevel = D3D_FEATURE_LEVEL_11_0;
@@ -787,9 +806,9 @@ namespace Render {
 
       ctx->CopyResource(d3d_texture, nv12_texture);
 
-      hr = ProcessNV12ToBmpFile("data/nv12.bmp", dst, xres, xres, real_yres);
-      if (FAILED(hr))
-          return false;
+      //hr = ProcessNV12ToBmpFile("data/nv12.bmp", dst, xres, xres, real_yres);
+      //if (FAILED(hr))
+      //    return false;
 
       return true;
   }
