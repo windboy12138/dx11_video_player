@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 #include <Windows.h>
-//#include <d3d11.h>
+#include <d3d11.h>
 #include <d3d11_1.h>
 #include <iostream>
 #include <mfapi.h>

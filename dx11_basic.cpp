@@ -1,7 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <assert.h>
 #include "dx11_basic.h"
-#include "MacroTools.h"
 #include "libyuv\planar_functions.h"
 #include "libyuv\convert_from.h"
 #include "libyuv\convert_from_argb.h"
