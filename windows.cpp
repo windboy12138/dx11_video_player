@@ -11,10 +11,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
   PAINTSTRUCT ps;
   HDC hdc;
   switch (message) {
-  case WM_PAINT:
-    hdc = BeginPaint(hWnd, &ps);
-    EndPaint(hWnd, &ps);
-    break;
   case WM_DESTROY:
     PostQuitMessage(0);
     break;
@@ -50,9 +46,10 @@ bool initWindow(HINSTANCE hInstance, int nCmdShow, HWND* hWnd) {
   RECT rc = { 0, 0, 1200, 720 };
   AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
   *hWnd = CreateWindow("DX11WindowClass", "Direct3D 11 Video Decoder Sample",
-                       WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
+                       //WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
+                       WS_OVERLAPPEDWINDOW,
                        CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top, nullptr, nullptr, hInstance,
-    nullptr);
+                       nullptr);
   if (!*hWnd)
     return false;
 
@@ -90,7 +87,6 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
     {
       float elapsed = clock.elapsed();
       app.update(elapsed);
-      //app.render();
       app.render_video();
     }
   }

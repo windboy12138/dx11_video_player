@@ -379,10 +379,17 @@ struct VideoTexture::InternalData {
   IMFAttributes*     pVideoReaderAttributes = NULL;
   IMFSourceReader*   pSourceReader = NULL;
   IMFMediaType*      pReaderOutputType = NULL, * pFirstOutputType = NULL;
-  MF_OBJECT_TYPE     ObjectType = MF_OBJECT_INVALID;
+  IMFMediaType*      pFileVideoMediaType = NULL;
+  IUnknown* spDecTransformUnk = NULL;
+  IMFTransform* pDecoderTransform = NULL; // This is H264 Decoder MFT.
+  IMFMediaType* pDecInputMediaType = NULL, * pDecOutputMediaType = NULL;
+  MF_OBJECT_TYPE ObjectType = MF_OBJECT_INVALID;
+  DWORD mftStatus = 0;
+  //MF_OBJECT_TYPE     ObjectType = MF_OBJECT_INVALID;
 
   // Start processing frames.
   IMFSample* pVideoSample = NULL;
+  IMFSample* pCopyVideoSample = NULL, *pH264DecodeOutSample = NULL;
   DWORD      streamIndex = 0, flags = 0;
   LONGLONG   llVideoTimeStamp = 0, llSampleDuration = 0;
   int        sampleCount = 0;
@@ -447,16 +454,7 @@ public:
     // Need the color converter DSP for conversions between YUV, RGB etc.
     // Lots of examples use this explicit colour converter load. Seems
     // like most cases it gets loaded automatically.
-   /* CHECK_HR(MFTRegisterLocalByCLSID(
-      __uuidof(CColorConvertDMO),
-      MFT_CATEGORY_VIDEO_PROCESSOR,
-      L"",
-      MFT_ENUM_FLAG_SYNCMFT,
-      0,
-      NULL,
-      0,
-      NULL),
-      "Error registering colour converter DSP.");*/
+   
 
     // Set up the reader for the file.
     CHECK_HR(MFCreateSourceResolver(&pSourceResolver),
@@ -483,19 +481,23 @@ public:
     CHECK_HR(pVideoReaderAttributes->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, 1),
       "Failed to set enable video processing attribute type for reader config.");
 
-    //CHECK_HR(pVideoReaderAttributes->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_IYUV),
-    //  "Failed to set media sub type on source reader output media type.");
+    CHECK_HR(pVideoReaderAttributes->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_IYUV),
+      "Failed to set media sub type on source reader output media type.");
 
-    CHECK_HR(pVideoReaderAttributes->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12),
-             "Failed to set media sub type on source reader output media type.");
+    //CHECK_HR(pVideoReaderAttributes->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12),
+    //         "Failed to set media sub type on source reader output media type.");
 
     CHECK_HR(MFCreateSourceReaderFromMediaSource(mediaFileSource, pVideoReaderAttributes, &pSourceReader),
       "Error creating media source reader.");
 
     CHECK_HR(MFCreateMediaType(&pReaderOutputType), "Failed to create source reader output media type.");
     CHECK_HR(pReaderOutputType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video), "Failed to set major type on source reader output media type.");
-    //CHECK_HR(pReaderOutputType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_IYUV), "Failed to set media sub type on source reader output media type.");
+
+#ifdef USE_NV12
     CHECK_HR(pReaderOutputType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12), "Failed to set media sub type on source reader output media type.");
+#else
+    CHECK_HR(pReaderOutputType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_IYUV), "Failed to set media sub type on source reader output media type.");
+#endif
 
     CHECK_HR(pSourceReader->SetCurrentMediaType((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, NULL, pReaderOutputType),
       "Failed to set output media type on source reader.");
@@ -514,8 +516,94 @@ public:
     return true;
   }
 
-  void update( float elapsed ) {
+  bool openwithMFT(const char* filename) {
+      finished = false;
 
+      wchar_t wfilename[256];
+      mbstowcs(wfilename, filename, sizeof(wfilename) / sizeof(wchar_t));
+      HRESULT hr = S_OK;
+
+      // Need the color converter DSP for conversions between YUV, RGB etc.
+      // Lots of examples use this explicit colour converter load. Seems
+      // like most cases it gets loaded automatically.
+
+
+      // Set up the reader for the file.
+      CHECK_HR(MFCreateSourceResolver(&pSourceResolver),
+               "MFCreateSourceResolver failed.");
+
+      CHECK_HR(pSourceResolver->CreateObjectFromURL(
+          wfilename,		        // URL of the source.
+          MF_RESOLUTION_MEDIASOURCE,// Create a source object.
+          NULL,                     // Optional property store.
+          &ObjectType,				// Receives the created object type. 
+          &uSource					// Receives a pointer to the media source.
+      ),
+          "Failed to create media source resolver for file.");
+
+      CHECK_HR(uSource->QueryInterface(IID_PPV_ARGS(&mediaFileSource)),
+               "Failed to create media file source.");
+
+      CHECK_HR(MFCreateAttributes(&pVideoReaderAttributes, 2),
+               "Failed to create attributes object for video reader.");
+
+      CHECK_HR(pVideoReaderAttributes->SetGUID(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID),
+               "Failed to set dev source attribute type for reader config.");
+
+      CHECK_HR(pVideoReaderAttributes->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, 1),
+               "Failed to set enable video processing attribute type for reader config.");
+
+      CHECK_HR(MFCreateSourceReaderFromMediaSource(mediaFileSource, pVideoReaderAttributes, &pSourceReader),
+               "Error creating media source reader.");
+
+      CHECK_HR(pSourceReader->GetCurrentMediaType((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, &pFileVideoMediaType),
+               "Error retrieving current media type from first video stream.");
+
+      // Create H.264 decoder.
+      CHECK_HR(CoCreateInstance(CLSID_CMSH264DecoderMFT, NULL, CLSCTX_INPROC_SERVER,
+                                IID_IUnknown, (void**)&spDecTransformUnk),
+               "Failed to create H264 decoder MFT.");
+
+      CHECK_HR(spDecTransformUnk->QueryInterface(IID_PPV_ARGS(&pDecoderTransform)), "Failed to get IMFTransform interface from H264 decoder MFT object.");
+
+      MFCreateMediaType(&pDecInputMediaType);
+      CHECK_HR(pFileVideoMediaType->CopyAllItems(pDecInputMediaType), "Error copying media type attributes to decoder input media type.");
+      CHECK_HR(pDecoderTransform->SetInputType(0, pDecInputMediaType, 0), "Failed to set input media type on H.264 decoder MFT.");
+
+      MFCreateMediaType(&pDecOutputMediaType);
+      CHECK_HR(pFileVideoMediaType->CopyAllItems(pDecOutputMediaType), "Error copying media type attributes to decoder input media type.");
+      CHECK_HR(pDecOutputMediaType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12), "Failed to set media sub type.");
+
+      CHECK_HR(pDecoderTransform->SetOutputType(0, pDecOutputMediaType, 0), "Failed to set output media type on H.264 decoder MFT.");
+
+      CHECK_HR(pDecoderTransform->GetInputStatus(0, &mftStatus), "Failed to get input status from H.264 decoder MFT.");
+
+      if (MFT_INPUT_STATUS_ACCEPT_DATA != mftStatus) {
+          printf("H.264 decoder MFT is not accepting data.\n");
+          return false;
+      }
+
+      std::cout << "H264 decoder output media type: " << GetMediaTypeDescription(pDecOutputMediaType) << std::endl << std::endl;
+
+      CHECK_HR(pDecoderTransform->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, NULL), "Failed to process FLUSH command on H.264 decoder MFT.");
+      CHECK_HR(pDecoderTransform->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, NULL), "Failed to process BEGIN_STREAMING command on H.264 decoder MFT.");
+      CHECK_HR(pDecoderTransform->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, NULL), "Failed to process START_OF_STREAM command on H.264 decoder MFT.");
+
+      if (!readOutputMediaFormat())
+          return false;
+
+      clock_time = 0.0f;
+
+      if (target_texture)
+          target_texture->destroy();
+
+      // Just to ensure we have something as the first frame, and also ensure we have the real required size (height % 16 should be 0)
+      //update(0.0f);
+
+      return true;
+  }
+
+  void update( float elapsed ) {
     if (paused)
       return;
 
@@ -602,6 +690,11 @@ public:
       hr = pVideoSample->ConvertToContiguousBuffer(&buf);
       hr = buf->GetCurrentLength(&bufLength);
 
+      //IMFDXGIBuffer* pDXGIBuffer = NULL;
+      //buf->QueryInterface(__uuidof(IMFDXGIBuffer), (LPVOID*)&pDXGIBuffer);
+      //ID3D11Texture2D* pTexture2D = NULL;
+      //hr = pDXGIBuffer->GetResource(__uuidof(ID3D11Texture2D), (LPVOID*)&pTexture2D);
+
       byte* byteBuffer = NULL;
       DWORD buffMaxLen = 0, buffCurrLen = 0;
       hr = buf->Lock(&byteBuffer, &buffMaxLen, &buffCurrLen);
@@ -612,8 +705,12 @@ public:
         target_texture = new Render::Texture();
         int texture_height = height * 2;
         //if (!target_texture->create(width, texture_height, DXGI_FORMAT_R8_UNORM, true))
-        //if (!target_texture->CreateTexture(width, height, DXGI_FORMAT_420_OPAQUE))
+
+#ifdef USE_NV12
         if (!target_texture->CreateNV12Texture(width, height))
+#else
+        if (!target_texture->CreateTexture(width, height, DXGI_FORMAT_420_OPAQUE))
+#endif
         {
             return;
         }
@@ -622,8 +719,13 @@ public:
       Clock clock;
       //target_texture->updateFromIYUV(byteBuffer, buffCurrLen);
       //target_texture->updateYV12(byteBuffer, buffCurrLen);
-      //target_texture->updateBGRA(byteBuffer, buffCurrLen);
+
+#ifdef USE_NV12
       target_texture->updateNV12(byteBuffer, buffCurrLen);
+#else
+      target_texture->updateBGRA(byteBuffer, buffCurrLen);
+#endif
+
       float elapsed = clock.elapsed();
 
       dbg("Sample count %d, Sample flags %d, sample duration %I64d, sample time %I64d. CT:%I64d. Buffer: %ld/%ld. Elapsed:%f\n", sampleCount, sampleFlags, llSampleDuration, llVideoTimeStamp, uct, buffCurrLen, buffMaxLen, elapsed);
@@ -635,6 +737,143 @@ public:
     SAFE_RELEASE(pVideoSample);
   }
 
+  bool updatewithMFT(float elapsed) {
+
+      if (paused)
+          return false;
+
+      if (finished)
+          return false;
+
+      clock_time += elapsed;
+
+      LONGLONG uct = (LONGLONG)(clock_time * 10000000);
+      if (uct < video_time)
+          return false;
+
+      assert(pSourceReader);
+      flags = 0;
+
+      HRESULT hr;
+      hr = pSourceReader->ReadSample(
+          MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+          0,                              // Flags.
+          &streamIndex,                   // Receives the actual stream index. 
+          &flags,                         // Receives status flags.
+          &llVideoTimeStamp,              // Receives the time stamp.
+          &pVideoSample                   // Receives the sample or NULL.
+      );
+
+      if (hr != S_OK) {
+          finished = true;
+          return false;
+      }
+
+      video_time = llVideoTimeStamp;
+
+      if (flags & MF_SOURCE_READERF_STREAMTICK)
+      {
+          dbg("\tStream tick.\n");
+      }
+      if (flags & MF_SOURCE_READERF_ENDOFSTREAM)
+      {
+          dbg("\tEnd of stream.\n");
+          if (autoloop) {
+              PROPVARIANT var = { 0 };
+              var.vt = VT_I8;
+              hr = pSourceReader->SetCurrentPosition(GUID_NULL, var);
+              if (hr != S_OK) { dbg("Failed to set source reader position."); }
+              clock_time = 0.0f;
+          }
+          else
+              finished = true;
+      }
+      if (flags & MF_SOURCE_READERF_NEWSTREAM)
+      {
+          dbg("\tNew stream.\n");
+          finished = true;
+      }
+      if (flags & MF_SOURCE_READERF_NATIVEMEDIATYPECHANGED)
+      {
+          dbg("\tNative type changed.\n");
+          finished = true;
+      }
+      if (flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED)
+      {
+          dbg("\tCurrent type changed: from %dx%d %s (@ %f fps)\n", width, height, GetMediaTypeDescription(pFirstOutputType).c_str(), fps);
+          if (!readOutputMediaFormat()) {
+              finished = true;
+              return false;
+          }
+
+      }
+
+      if (pVideoSample) {
+          hr = pVideoSample->SetSampleTime(llVideoTimeStamp);
+          assert(hr == S_OK);
+
+          hr = pVideoSample->GetSampleDuration(&llSampleDuration);
+          assert(hr == S_OK);
+
+          hr = pVideoSample->GetSampleFlags(&sampleFlags);
+          assert(hr == S_OK);
+
+          // Replicate transmitting the sample across the network and reconstructing.
+          //CHECK_HR(CreateAndCopySingleBufferIMFSample(pVideoSample, &pCopyVideoSample),
+          //         "Failed to copy single buffer IMF sample.");
+
+          // Apply the H264 decoder transform
+          CHECK_HR(pDecoderTransform->ProcessInput(0, pVideoSample, 0),
+                   "The H264 decoder ProcessInput call failed.");
+
+          IMFMediaBuffer* buf = NULL;
+          DWORD bufLength;
+
+          hr = pVideoSample->ConvertToContiguousBuffer(&buf);
+          hr = buf->GetCurrentLength(&bufLength);
+          
+          //HRESULT getOutputResult = S_OK;
+          //while (getOutputResult == S_OK) {
+
+          //    getOutputResult = GetTransformOutput(pDecoderTransform, &pH264DecodeOutSample, &h264DecodeTransformFlushed);
+
+          //    if (getOutputResult != S_OK && getOutputResult != MF_E_TRANSFORM_NEED_MORE_INPUT) {
+          //        printf("Error getting H264 decoder transform output, error code %.2X.\n", getOutputResult);
+          //        break;
+          //    }
+
+          //    SAFE_RELEASE(pH264DecodeOutSample);
+          //}
+
+          
+          // Some videos report one resolution and after the first frame change the height to the next multiple of 16 (using the event MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED)
+          if (!target_texture) {
+              target_texture = new Render::Texture();
+              int texture_height = height * 2;
+              //if (!target_texture->create(width, texture_height, DXGI_FORMAT_R8_UNORM, true))
+              //if (!target_texture->CreateTexture(width, height, DXGI_FORMAT_420_OPAQUE))
+              if (!target_texture->CreateNV12Texture(width, height))
+              {
+                  return false;
+              }
+          }
+
+          Clock clock;
+          //target_texture->updateFromIYUV(byteBuffer, buffCurrLen);
+          //target_texture->updateYV12(byteBuffer, buffCurrLen);
+          //target_texture->updateBGRA(byteBuffer, buffCurrLen);
+          //target_texture->updateNV12(byteBuffer, buffCurrLen);
+          float elapsed = clock.elapsed();
+
+          //dbg("Sample count %d, Sample flags %d, sample duration %I64d, sample time %I64d. CT:%I64d. Buffer: %ld/%ld. Elapsed:%f\n", sampleCount, sampleFlags, llSampleDuration, llVideoTimeStamp, uct, buffCurrLen, buffMaxLen, elapsed);
+
+          //SAFE_RELEASE(buf);
+          sampleCount++;
+      }
+
+      SAFE_RELEASE(pVideoSample);
+      return true;
+  }
 };
 
 bool VideoTexture::createAPI() {
@@ -680,7 +919,7 @@ bool VideoTexture::hasFinished() {
 
 bool VideoTexture::render_video()
 {
-    return internal_data->target_texture->RenderTexture();
+    return internal_data->target_texture->RenderTexture2();
 }
 
 Render::Texture* VideoTexture::getTexture() {
