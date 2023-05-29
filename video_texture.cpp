@@ -598,7 +598,7 @@ public:
           target_texture->destroy();
 
       // Just to ensure we have something as the first frame, and also ensure we have the real required size (height % 16 should be 0)
-      //update(0.0f);
+      update(0.0f);
 
       return true;
   }
@@ -611,11 +611,17 @@ public:
       return;
 
     clock_time += elapsed;
+    printf("clock_time %f\n", clock_time);
 
     LONGLONG uct = (LONGLONG)(clock_time * 10000000);
+    printf("uct time %lld, video time is %lld", uct, video_time);
     if (uct < video_time)
-      return;
-
+    {
+        printf("\t Render: 0\n");
+        return;
+    }
+    printf("\t Render: 1\n");
+    
     assert(pSourceReader);
     flags = 0;
 

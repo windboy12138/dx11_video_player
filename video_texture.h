@@ -2,6 +2,8 @@
 
 #include "dx11_basic.h"
 
+#define USE_NV12
+
 struct VideoTexture {
 
   static bool createAPI();

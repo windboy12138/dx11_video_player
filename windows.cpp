@@ -86,6 +86,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
     else 
     {
       float elapsed = clock.elapsed();
+      printf("Time elapsed %f\n", elapsed);
       app.update(elapsed);
       app.render_video();
     }
