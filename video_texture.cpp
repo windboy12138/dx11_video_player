@@ -21,6 +21,8 @@
 
 #define CHECK_HR(x, msg) hr = x; if( hr != S_OK ) { dbg(msg); return false; }
 
+bool can_render = false;
+
 //#define SHOW_DEBUG        1
 #if SHOW_DEBUG
 static void dbg(const char* format, ...) {
@@ -617,9 +619,11 @@ public:
     printf("uct time %lld, video time is %lld", uct, video_time);
     if (uct < video_time)
     {
+        can_render = false;
         printf("\t Render: 0\n");
         return;
     }
+    can_render = true;
     printf("\t Render: 1\n");
     
     assert(pSourceReader);
@@ -925,7 +929,11 @@ bool VideoTexture::hasFinished() {
 
 bool VideoTexture::render_video()
 {
-    return internal_data->target_texture->RenderTexture2();
+    if (can_render)
+    {
+        return internal_data->target_texture->RenderTexture2();
+    }
+    return false;
 }
 
 Render::Texture* VideoTexture::getTexture() {
